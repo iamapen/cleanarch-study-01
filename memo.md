@@ -71,3 +71,168 @@ classDiagram
 - 1コントローラに詰め込もうとすると
   - みづらい、テストしづらい、理解しづらい
 - 操作ごと、ユースケースごとに分解することがおすすめ
+
+# 7章: 永続化アダプタの実装
+- DB中心になっちゃだめよ
+- この依存の向きを逆にして、アプリケーション層に永続化アダプタを差し込む方法
+
+## 7.1: 依存関係の逆転
+```mermaid
+classDiagram
+  namespace application_port_out {
+    class Port1 {
+      <<interface>>
+    }
+    class Port2 {
+      <<interface>>
+    }
+  }
+  namespace adapter_out_persistence {
+    class Adapter1
+  }
+  Port1 <|.. Adapter1
+  Port2 <|.. Adapter1
+```
+- 送信アダプタがあるから、永続化の関心事をドメインから隔離できる
+
+## 7.2: 永続化アダプタの責務
+- 入力モデルを受け取る
+  - ドメイン層のエンティティでもいいし、DB処理のための情報を持った専用のクラスでもいい
+    - ただし何を使うのかをインタフェイスに定義して示す必要がある
+  - 入力モデルはアプリケーションの核に属するものであり、永続化アダプタには属さない
+    - 永続化に関するコードが原因で入力モデルに対して変更が加えられることはない
+- DB操作を行えるものに変換する
+- 変換されたものを使ってDBを操作する
+- DBから返ってきたものをアプリケーションが扱える出力モデルに変換する
+- 変換された出力モデルを返す
+  - 出力モデルはアプリケーションの核が所有するものであり、永続化アダプタには属さない 
+
+型変換が面倒なときにどうするかは8章
+
+## 7.3: 送信ポートの分割
+```mermaid
+classDiagram
+  namespace application_domain_service {
+    class SendMoneyService
+    class RegisterAccountService
+ }
+ namespace application_port_out {
+   class LoadAccountPort {
+     <<interface>>
+   }
+   class UpdateAccountStatePort {
+     <<interface>>
+   }
+   class CreateAccountPort {
+     <<interface>>
+   }
+ }
+ namespace adapter_out_persistence {
+   class PersistenceAdapter
+ }
+ SendMoneyService --> LoadAccountPort
+ SendMoneyService --> UpdateAccountStatePort
+ RegisterAccountService --> CreateAccountPort
+ LoadAccountPort <|.. PersistenceAdapter
+ UpdateAccountStatePort <|.. PersistenceAdapter
+ CreateAccountPort <|.. PersistenceAdapter
+```
+- テーブル単位にすると、送信ポートが肥大化してしまう
+  - そのサービスが使わないメソッドに対しても依存してしまう
+  - テスト時に、どのメソッドをモックすればいいのかわからず混乱、完全に実装されたモックかどうかわからず混乱、などが発生する
+  - 原則としては、クライアント（ここではサービス）が必要とするメソッドだけを提供するインターフェイスを定義するべき
+    - インターフェイス分離の原則
+    - LoadAccountPort, UpdateAccountStatePort, CreateAccountPort
+
+## 7.4: 永続化アダプタの分割
+```mermaid
+classDiagram
+  namespace application_domain_service {
+    class SendMoneyService
+    class RegisterAccountService
+  }
+  namespace application_port_out {
+    class LoadAccountPort {
+     <<interface>>
+    }
+    class UpdateAccountStatePort { 
+      <<interface>>
+    }
+    class CreateAccountPort { 
+      <<interface>>
+    }
+   }
+  namespace adapter_out_persistence {
+    class AccountPersistenceAdapter
+    class UserPersistenceAdapter
+  }
+  SendMoneyService --> LoadAccountPort
+  SendMoneyService --> UpdateAccountStatePort
+  RegisterAccountService --> CreateAccountPort
+  LoadAccountPort <|.. AccountPersistenceAdapter
+  UpdateAccountStatePort <|.. AccountPersistenceAdapter
+  CreateAccountPort <|.. UserPersistenceAdapter
+```
+- 永続化アダプタは、最終的にすべての送信ポートが実装されるのであれば複数用意しても問題ない
+  - AccountPersistenceAdapter, UserPersistenceAdapter
+- ORMを使うか生SQLを使うかはアダプタ側の自由
+- 集約ごとに永続化アダプタを1つ用意すると、bounded contextを分離することになった場合に、そのための基盤がすでに出来上がっていることになる
+  - AccountPersistenceAdapter, BillingPersistenceAdapter
+- bounded contextが他のコンテキストからの情報を必要とする場合は、ドメインサービスを呼び出すか、2つのコンテキストが連携して処理を行うように調整するアプリケーションサービスを導入するようにする（詳しくは13章）
+
+## 7.5: Spring Data JPAを用いたサンプル
+
+- 面倒でも型変換しろと言っている
+
+```mermaid
+classDiagram
+  namespace application_domain_service {
+    class SendMoneyService
+    class RegisterAccountService
+  }
+  namespace application_domain_model {
+    class Account
+  }
+  namespace application_port_out {
+    class LoadAccountPort {
+      <<interface>>
+    }
+    class UpdateAccountStatePort { 
+      <<interface>>
+    }
+    class CreateAccountPort { 
+      <<interface>>
+    }
+  }
+  namespace adapter_out_persistence {
+    class IAccountRepository {
+      <<interface>>
+    }
+    class IActivityRepository {
+      <<interface>>
+    }
+    class AccountPersistenceAdapter
+    class AccountMapper
+  }
+  SendMoneyService --> LoadAccountPort
+  SendMoneyService --> UpdateAccountStatePort
+  SendMoneyService --> Account
+  RegisterAccountService --> Account
+  RegisterAccountService --> CreateAccountPort
+  LoadAccountPort <|.. AccountPersistenceAdapter
+  UpdateAccountStatePort <|.. AccountPersistenceAdapter
+  AccountPersistenceAdapter --> IAccountRepository
+  AccountPersistenceAdapter --> IActivityRepository
+  AccountPersistenceAdapter --> AccountMapper
+  Account <-- AccountMapper
+```
+
+## 7.6: DBトランザクション
+
+- 永続化アダプタの呼び出しを調整するサービスに移譲するべき
+- framework特有のアノテーションがアプリケーションの核に入り込むが、現実を見て妥協しろと言っている
+
+## 7.7: まとめ
+
+- ポートを基点に置き換え可能な永続化アダプタを作成すれば、アプリケーションの核を永続化に関する関心事から解放できるようになる
+- それが、深いドメインモデルを構築することにつながる
