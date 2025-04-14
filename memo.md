@@ -27,3 +27,41 @@
 - 本当に必要なデータしか含まれなくなるから
 - 異なるユースケース間で出力モデルを共有すると密結合になってしまう
 - 単一責任の原則(SRP)に従う
+
+# 6章: Webアダプタの実装
+## 6.1: 依存関係の逆転
+- 受信アダプタ(Webアダプタ・コントローラ) から アプリケーション層にある受信ポートを系宇してサービスへと向かう
+
+```mermaid
+classDiagram
+  namespace adapter_in_web {
+    class Controller
+  }
+  namespace application_port_in {
+    class Port1 {
+      <<interface>>
+    }
+    class Port2 {
+      <<interface>>
+    }
+  }
+  namespace application_domain_service {
+    class Service1
+  }
+  Controller --> Port1
+  Controller --> Port2
+  Port1 <|.. Service1
+  Port2 <|.. Service2
+```
+- ポートは外部からアプリケーション核とコミュニケーションをとるための仕様を提示している
+  - ポートがあることでテスト用ドライバも作りやすくなる
+
+## 6.2: 受信アダプタの責務
+- REST API の場合
+  - HTTPリクエストを受け取り、プログラムで利用可能なオブジェクトに変換する
+  - 認証/認可
+  - 入力値の妥当性確認
+  - 入力値をUsecaseの入力モデルに変換
+  - Usecaseの呼び出し
+  - Usecaseの出力モデルをHTTPレスポンスに変換
+  - HTTPレスポンスを返す
