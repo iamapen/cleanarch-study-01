@@ -53,4 +53,13 @@ class Money
     {
         return new Money(-$this->amount);
     }
+
+    /**
+     * 負数かを返す
+     * @return bool
+     */
+    public function isNegative(): bool
+    {
+        return $this->amount < 0;
+    }
 }
