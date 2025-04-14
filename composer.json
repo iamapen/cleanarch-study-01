@@ -12,7 +12,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Acme\\Chapter07\\Buckpal\\": "src/Chapter07/"
+            "Acme\\Buckpal\\": "src/"
         }
     },
     "authors": [
